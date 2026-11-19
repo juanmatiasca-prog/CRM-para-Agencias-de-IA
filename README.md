@@ -8,7 +8,7 @@ Construido sobre **Firebase** (Authentication, Cloud Firestore, Cloud Functions,
 Hosting y Storage).
 
 > **Estado:** proyecto en etapa inicial. El código es público y está en desarrollo
-> activo.
+> activo. La fase actual es de planificación: ver [`planning/`](planning/00-indice.md).
 
 ## Seguridad y privacidad
 
@@ -49,6 +49,7 @@ firebase emulators:start
 | `functions/` | Cloud Functions (lógica de backend) |
 | `firestore.rules` | Reglas de seguridad de Firestore |
 | `storage.rules` | Reglas de seguridad de Storage |
+| `planning/` | Investigación y catálogo de funcionalidades (empieza por [planning/00-indice.md](planning/00-indice.md)) |
 | `docs/` | Documentación del proyecto |
 | `AGENTS.md` | Instrucciones para agentes de IA |
 

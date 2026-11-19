@@ -68,3 +68,7 @@ backups/
 *.xlsx
 *.sqlite
 *.db
+
+# Notas de investigacion y reportes intermedios (no se publican)
+research_notes/
+reports/
