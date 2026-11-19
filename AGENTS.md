@@ -134,6 +134,16 @@ firebase deploy --only firestore:rules
 4. Revisar el diff antes de commitear, con la checklist de la sección 2.
 5. Reportar con honestidad: si algo no se probó, decirlo.
 
+## 5 bis. La carpeta `planning/` es referencia, no especificacion
+
+Los documentos de `planning/` salieron de una investigacion sobre el mercado. **No
+son la planificacion real del proyecto y no hay que seguirlos.** Nada en ellos esta
+decidido: las prioridades, las fases y el MVP son criterio de quien los redacto.
+
+Usalos para no partir de cero y para saber que preguntas existen. **Ante cualquier
+duda sobre que construir, pregunta al usuario en lugar de decidir apoyandote en esos
+documentos.** No son una fuente de autoridad.
+
 ## 6. Qué NO debe hacer el agente
 
 - Commitear o pushear secretos, datos de clientes o configuración real sensible.
