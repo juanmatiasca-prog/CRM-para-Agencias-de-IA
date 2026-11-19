@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------
+# SECRETOS — NUNCA deben llegar a GitHub (este repo es PÚBLICO)
+# ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p8
+*.p12
+*.jks
+*.keystore
+secrets/
+credentials/
+
+# Service accounts de Firebase / Google Cloud
+*serviceAccount*.json
+*service-account*.json
+*-firebase-adminsdk-*.json
+gha-creds-*.json
+google-services.json
+GoogleService-Info.plist
+.runtimeconfig.json
+
+# Firebase local
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+*.log
+.firebaserc.local
+firebase-export-*/
+emulator-data/
+
+# Dependencias y builds
+node_modules/
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+coverage/
+*.tsbuildinfo
+
+# Entornos Python (si se usa alguna función/script)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Editores y sistema operativo
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Datos de clientes / exportaciones — información sensible
+data/
+exports/
+backups/
+*.csv
+*.xlsx
+*.sqlite
+*.db
