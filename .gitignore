@@ -72,3 +72,12 @@ backups/
 # Notas de investigacion y reportes intermedios (no se publican)
 research_notes/
 reports/
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+.vercel
+
+# Config local de Claude Code
+.claude/
