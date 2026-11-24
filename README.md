@@ -52,7 +52,7 @@ Copy-Item .env.example .env.local
    proyecto. Se obtienen con la CLI, sin pasar por la consola web:
 
 ```powershell
-npx -y firebase-tools@latest apps:sdkconfig WEB --project mkt-hackers-crm-67a7b
+npx -y firebase-tools@latest apps:sdkconfig WEB --project <TU_PROJECT_ID>
 ```
 
 4. Arrancar en local:
