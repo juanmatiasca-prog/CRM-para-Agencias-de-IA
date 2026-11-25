@@ -16,6 +16,14 @@
  */
 import { getApp, getApps, initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore } from "firebase/firestore";
+
+/**
+ * ID de la base de datos de Firestore. No es la `(default)`: el proyecto usa
+ * una base de datos con nombre, asi que hay que pasarla explicitamente a
+ * `getFirestore`. Olvidarlo apunta silenciosamente a una base que no existe.
+ */
+export const FIRESTORE_DATABASE_ID = "mkt-hackers-db-id";
 
 const firebaseConfig: FirebaseOptions = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -33,6 +41,7 @@ export const isFirebaseConfigured = Boolean(
 
 let appInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
+let dbInstance: Firestore | null = null;
 
 export function getFirebaseApp(): FirebaseApp {
   if (!appInstance) {
@@ -50,4 +59,15 @@ export function getFirebaseAuth(): Auth {
     authInstance = getAuth(getFirebaseApp());
   }
   return authInstance;
+}
+
+/**
+ * Devuelve la instancia de Firestore apuntando a la base de datos con nombre.
+ * Igual que Auth, se crea perezosamente y solo debe usarse en el navegador.
+ */
+export function getDb(): Firestore {
+  if (!dbInstance) {
+    dbInstance = getFirestore(getFirebaseApp(), FIRESTORE_DATABASE_ID);
+  }
+  return dbInstance;
 }

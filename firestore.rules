@@ -1,0 +1,263 @@
+rules_version = '2';
+
+// ===============================================================
+// CRM_MKt_HACKERS — Reglas de seguridad de Cloud Firestore
+// ===============================================================
+//
+// CONTEXTO DE SEGURIDAD
+//
+// La aplicacion es un sitio estatico servido desde Firebase Hosting. No hay
+// backend propio ni Admin SDK: TODO el acceso a datos ocurre desde el navegador
+// con el SDK web. Por tanto estas reglas son el unico control de acceso real
+// que existe. Lo que no se bloquee aqui, queda abierto.
+//
+// PRINCIPIO: aislamiento total por usuario. Cada persona solo puede leer y
+// escribir lo que cuelga de su propio /users/{uid}. No hay datos compartidos,
+// ni equipos, ni administradores, ni lectura publica, ni acceso anonimo.
+//
+// ===============================================================
+// Modelo de datos asumido
+// ===============================================================
+//
+// Coleccion: /users/{uid}
+//   Document ID: el uid de Firebase Auth del propietario
+//   Campos:
+//     - displayName: string (obligatorio, 0-80)   nombre mostrado
+//     - email:       string (obligatorio, 3-320)  correo de la cuenta
+//     - createdAt:   timestamp (obligatorio, inmutable)
+//     - updatedAt:   timestamp (obligatorio)
+//
+// Coleccion: /users/{uid}/clients/{clientId}
+//   Document ID: identificador generado por el cliente
+//   Campos:
+//     - name:      string (obligatorio, 1-120)
+//     - company:   string (obligatorio, puede ser vacio, 0-120)
+//     - email:     string (obligatorio, puede ser vacio, 0-320)
+//     - phone:     string (obligatorio, puede ser vacio, 0-40)
+//     - industry:  string (obligatorio, puede ser vacio, 0-80)
+//     - notes:     string (obligatorio, puede ser vacio, 0-5000)
+//     - status:    string (obligatorio) uno de: lead | activo | pausado | cerrado
+//     - createdAt: timestamp (obligatorio, inmutable)
+//     - updatedAt: timestamp (obligatorio)
+//
+// Coleccion: /users/{uid}/clients/{clientId}/projects/{projectId}
+//   Campos:
+//     - name:        string (obligatorio, 1-120)
+//     - description: string (obligatorio, puede ser vacio, 0-5000)
+//     - status:      string (obligatorio) uno de:
+//                    discovery | propuesta | en_curso | entregado | cancelado
+//     - budget:      number >= 0 o null (obligatorio, puede ser null)
+//     - createdAt:   timestamp (obligatorio, inmutable)
+//     - updatedAt:   timestamp (obligatorio)
+//
+// Coleccion: /users/{uid}/clients/{clientId}/projects/{projectId}/comments/{commentId}
+//   Campos:
+//     - body:      string (obligatorio, 1-5000)
+//     - author:    string (obligatorio, 1-320)
+//     - createdAt: timestamp (obligatorio, inmutable)
+//   Los comentarios son inmutables: se crean y se borran, no se editan.
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =============================================================
+    // Funciones auxiliares
+    // =============================================================
+
+    // Hay sesion iniciada.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // El solicitante es el dueno de esta rama del arbol. Es la unica
+    // autorizacion que existe en toda la base de datos.
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // El documento entrante no trae campos fuera de los declarados.
+    // Bloquea la contaminacion de esquema.
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Estan todos los campos obligatorios.
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // String con limite de tamano. El limite superior es obligatorio en TODOS
+    // los campos de texto: sin el, cualquiera puede escribir 1 MB por campo.
+    function isBoundedString(value, minLen, maxLen) {
+      return value is string && value.size() >= minLen && value.size() <= maxLen;
+    }
+
+    // Marca de tiempo puesta por el servidor en esta misma peticion.
+    // Con serverTimestamp() el valor resuelve exactamente a request.time, asi
+    // que el cliente no puede falsear fechas hacia el pasado ni el futuro.
+    function isServerTime(value) {
+      return value is timestamp && value == request.time;
+    }
+
+    // Los campos indicados no cambian respecto al documento existente.
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // =============================================================
+    // Validadores de dominio
+    //
+    // Se invocan en create Y en update. Validar solo en create deja la puerta
+    // abierta a crear un documento valido y despues corromperlo.
+    // =============================================================
+
+    function isValidProfile(data) {
+      return hasOnlyAllowedFields(['displayName', 'email', 'createdAt', 'updatedAt'])
+        && hasRequiredFields(['displayName', 'email', 'createdAt', 'updatedAt'])
+        && isBoundedString(data.displayName, 0, 80)
+        && isBoundedString(data.email, 3, 320)
+        && data.createdAt is timestamp
+        && isServerTime(data.updatedAt);
+    }
+
+    function isValidClient(data) {
+      return hasOnlyAllowedFields([
+          'name', 'company', 'email', 'phone', 'industry', 'notes',
+          'status', 'createdAt', 'updatedAt'
+        ])
+        && hasRequiredFields([
+          'name', 'company', 'email', 'phone', 'industry', 'notes',
+          'status', 'createdAt', 'updatedAt'
+        ])
+        && isBoundedString(data.name, 1, 120)
+        && isBoundedString(data.company, 0, 120)
+        && isBoundedString(data.email, 0, 320)
+        && isBoundedString(data.phone, 0, 40)
+        && isBoundedString(data.industry, 0, 80)
+        && isBoundedString(data.notes, 0, 5000)
+        && data.status in ['lead', 'activo', 'pausado', 'cerrado']
+        && data.createdAt is timestamp
+        && isServerTime(data.updatedAt);
+    }
+
+    function isValidProject(data) {
+      return hasOnlyAllowedFields([
+          'name', 'description', 'status', 'budget', 'createdAt', 'updatedAt'
+        ])
+        && hasRequiredFields([
+          'name', 'description', 'status', 'budget', 'createdAt', 'updatedAt'
+        ])
+        && isBoundedString(data.name, 1, 120)
+        && isBoundedString(data.description, 0, 5000)
+        && data.status in ['discovery', 'propuesta', 'en_curso', 'entregado', 'cancelado']
+        // El presupuesto es opcional en el negocio, pero el campo siempre
+        // existe: o un numero no negativo y acotado, o null explicito.
+        && (data.budget == null ||
+            (data.budget is number && data.budget >= 0 && data.budget <= 1000000000))
+        && data.createdAt is timestamp
+        && isServerTime(data.updatedAt);
+    }
+
+    function isValidComment(data) {
+      return hasOnlyAllowedFields(['body', 'author', 'createdAt'])
+        && hasRequiredFields(['body', 'author', 'createdAt'])
+        && isBoundedString(data.body, 1, 5000)
+        && isBoundedString(data.author, 1, 320)
+        && isServerTime(data.createdAt);
+    }
+
+    // =============================================================
+    // Reglas
+    //
+    // Toda la jerarquia cuelga de /users/{uid}. La comprobacion isOwner(uid)
+    // se repite en cada nivel a proposito: en Firestore las reglas de un
+    // documento NO se heredan automaticamente a sus subcolecciones.
+    // =============================================================
+
+    match /users/{uid} {
+
+      // Solo el dueno ve su perfil. Contiene el correo, que es dato personal:
+      // ningun otro usuario autenticado puede leerlo.
+      allow read: if isOwner(uid);
+
+      // Al crear el perfil, createdAt debe ser la hora del servidor.
+      allow create: if isOwner(uid)
+        && isValidProfile(request.resource.data)
+        && isServerTime(request.resource.data.createdAt);
+
+      // Al actualizar, createdAt queda congelado.
+      allow update: if isOwner(uid)
+        && isValidProfile(request.resource.data)
+        && areImmutableFieldsUnchanged(['createdAt']);
+
+      // El borrado de cuenta no se hace desde el cliente.
+      allow delete: if false;
+
+      // ---------------------------------------------------------
+      // Clientes
+      // ---------------------------------------------------------
+      match /clients/{clientId} {
+
+        allow read: if isOwner(uid);
+
+        allow create: if isOwner(uid)
+          && isValidClient(request.resource.data)
+          && isServerTime(request.resource.data.createdAt);
+
+        allow update: if isOwner(uid)
+          && isValidClient(request.resource.data)
+          && areImmutableFieldsUnchanged(['createdAt']);
+
+        allow delete: if isOwner(uid);
+
+        // -------------------------------------------------------
+        // Proyectos del cliente
+        // -------------------------------------------------------
+        match /projects/{projectId} {
+
+          allow read: if isOwner(uid);
+
+          allow create: if isOwner(uid)
+            && isValidProject(request.resource.data)
+            && isServerTime(request.resource.data.createdAt);
+
+          allow update: if isOwner(uid)
+            && isValidProject(request.resource.data)
+            && areImmutableFieldsUnchanged(['createdAt']);
+
+          allow delete: if isOwner(uid);
+
+          // -----------------------------------------------------
+          // Comentarios del proyecto
+          // -----------------------------------------------------
+          match /comments/{commentId} {
+
+            allow read: if isOwner(uid);
+
+            allow create: if isOwner(uid)
+              && isValidComment(request.resource.data);
+
+            // Inmutables: un comentario es un registro de lo que se dijo.
+            // Se puede borrar, pero no reescribir.
+            allow update: if false;
+
+            allow delete: if isOwner(uid);
+          }
+        }
+      }
+    }
+
+    // =============================================================
+    // Cierre por defecto
+    //
+    // Cualquier ruta no contemplada arriba queda denegada. Esto incluye
+    // colecciones raiz nuevas y cualquier subcoleccion no declarada dentro
+    // de /users/{uid}.
+    // =============================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, FolderKanban, MessageSquare, Users } from "lucide-react";
+import { ArrowRight, CheckCircle2, Database, FolderKanban, Users } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { PageHeader } from "@/components/page-header";
@@ -15,34 +15,25 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useClients } from "@/hooks/use-clients";
-import { countComments, countProjects } from "@/lib/storage";
 import { navItems } from "@/lib/nav";
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { clients, ready } = useClients();
+  // El resumen no abre ningún cliente, así que no necesita sus comentarios.
+  const { clients, ready, error } = useClients(null);
 
   const firstName = (user?.displayName || user?.email || "").split(/[\s@]/)[0];
 
+  const projectCount = clients.reduce(
+    (total, client) => total + client.projects.length,
+    0,
+  );
+  const activeCount = clients.filter((client) => client.status === "activo").length;
+
   const stats = [
-    {
-      label: "Clientes",
-      value: clients.length,
-      icon: Users,
-      href: "/dashboard/clientes",
-    },
-    {
-      label: "Proyectos",
-      value: countProjects(clients),
-      icon: FolderKanban,
-      href: "/dashboard/clientes",
-    },
-    {
-      label: "Comentarios",
-      value: countComments(clients),
-      icon: MessageSquare,
-      href: "/dashboard/clientes",
-    },
+    { label: "Clientes", value: clients.length, icon: Users },
+    { label: "Proyectos", value: projectCount, icon: FolderKanban },
+    { label: "Clientes activos", value: activeCount, icon: CheckCircle2 },
   ];
 
   const pending = navItems.filter((item) => !item.ready);
@@ -55,6 +46,13 @@ export default function DashboardPage() {
       />
 
       <div className="flex flex-col gap-6 p-4 sm:p-6">
+        {error && (
+          <Alert variant="destructive">
+            <AlertTitle>Problema con la base de datos</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-3">
           {stats.map((stat) => (
             <Card key={stat.label}>
@@ -74,11 +72,13 @@ export default function DashboardPage() {
         </div>
 
         <Alert>
-          <AlertTitle>Los datos se guardan en este navegador</AlertTitle>
+          <Database className="size-4" />
+          <AlertTitle>Tus datos están en Cloud Firestore</AlertTitle>
           <AlertDescription>
-            Todavía no hay base de datos conectada. Lo que crees aquí vive en el
-            almacenamiento local de este navegador: no se comparte con tu equipo ni
-            viaja a otros dispositivos, y se pierde si borras los datos del sitio.
+            Cada cuenta tiene su propio espacio. Nadie más puede leer tus
+            clientes, proyectos ni comentarios: el aislamiento lo imponen las
+            reglas de seguridad de la base de datos, no la interfaz. Los cambios
+            se sincronizan al instante entre tus dispositivos.
           </AlertDescription>
         </Alert>
 

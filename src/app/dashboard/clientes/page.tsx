@@ -8,6 +8,8 @@ import { ClientDetail } from "@/components/clientes/client-detail";
 import { NewClientDialog } from "@/components/clientes/new-client-dialog";
 import { ClientStatusBadge } from "@/components/clientes/status-badge";
 import { PageHeader } from "@/components/page-header";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -15,10 +17,31 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useClients } from "@/hooks/use-clients";
 import { cn } from "@/lib/utils";
 
+/** Convierte un fallo de Firestore en un mensaje util para la persona. */
+function writeError(cause: unknown): string {
+  const code =
+    typeof cause === "object" && cause !== null && "code" in cause
+      ? String((cause as { code: unknown }).code)
+      : "";
+  if (code === "permission-denied") {
+    return "La base de datos rechazó el cambio. Revisa las reglas de seguridad.";
+  }
+  if (code === "unavailable") {
+    return "Sin conexión con la base de datos. El cambio se enviará al recuperarla.";
+  }
+  return "No se pudo guardar el cambio.";
+}
+
 export default function ClientesPage() {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
   const {
     clients,
     ready,
+    error,
+    migration,
+    dismissMigration,
     addClient,
     updateClientStatus,
     removeClient,
@@ -26,10 +49,7 @@ export default function ClientesPage() {
     updateProjectStatus,
     removeProject,
     addComment,
-  } = useClients();
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  } = useClients(selectedId);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -53,14 +73,40 @@ export default function ClientesPage() {
         description="Clientes, sus proyectos y el seguimiento de cada uno"
         actions={
           <NewClientDialog
-            onCreate={(input) => {
-              const client = addClient(input);
-              setSelectedId(client.id);
-              toast.success(`${client.name} añadido`);
+            onCreate={async (input) => {
+              try {
+                const id = await addClient(input);
+                setSelectedId(id);
+                toast.success(`${input.name} añadido`);
+              } catch (cause) {
+                toast.error(writeError(cause));
+              }
             }}
           />
         }
       />
+
+      {(error || migration) && (
+        <div className="flex flex-col gap-3 border-b p-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertTitle>Problema con la base de datos</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          {migration && (
+            <Alert>
+              <AlertTitle>Datos locales migrados a Firestore</AlertTitle>
+              <AlertDescription className="flex flex-wrap items-center gap-3">
+                <span>{migration}</span>
+                <Button size="sm" variant="outline" onClick={dismissMigration}>
+                  Entendido
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      )}
 
       <div className="grid flex-1 gap-0 lg:grid-cols-[320px_1fr]">
         {/* Lista */}
@@ -140,25 +186,51 @@ export default function ClientesPage() {
           ) : selected ? (
             <ClientDetail
               client={selected}
-              onStatusChange={(status) => updateClientStatus(selected.id, status)}
-              onDelete={() => {
-                removeClient(selected.id);
-                setSelectedId(null);
-                toast.success(`${selected.name} eliminado`);
+              onStatusChange={async (status) => {
+                try {
+                  await updateClientStatus(selected.id, status);
+                } catch (cause) {
+                  toast.error(writeError(cause));
+                }
               }}
-              onAddProject={(input) => {
-                addProject(selected.id, input);
-                toast.success("Proyecto creado");
+              onDelete={async () => {
+                try {
+                  await removeClient(selected.id);
+                  setSelectedId(null);
+                  toast.success(`${selected.name} eliminado`);
+                } catch (cause) {
+                  toast.error(writeError(cause));
+                }
               }}
-              onProjectStatusChange={(projectId, status) =>
-                updateProjectStatus(selected.id, projectId, status)
-              }
-              onDeleteProject={(projectId) => {
-                removeProject(selected.id, projectId);
-                toast.success("Proyecto eliminado");
+              onAddProject={async (input) => {
+                try {
+                  await addProject(selected.id, input);
+                  toast.success("Proyecto creado");
+                } catch (cause) {
+                  toast.error(writeError(cause));
+                }
               }}
-              onAddComment={(projectId, body) => {
-                addComment(selected.id, projectId, body);
+              onProjectStatusChange={async (projectId, status) => {
+                try {
+                  await updateProjectStatus(selected.id, projectId, status);
+                } catch (cause) {
+                  toast.error(writeError(cause));
+                }
+              }}
+              onDeleteProject={async (projectId) => {
+                try {
+                  await removeProject(selected.id, projectId);
+                  toast.success("Proyecto eliminado");
+                } catch (cause) {
+                  toast.error(writeError(cause));
+                }
+              }}
+              onAddComment={async (projectId, body) => {
+                try {
+                  await addComment(selected.id, projectId, body);
+                } catch (cause) {
+                  toast.error(writeError(cause));
+                }
               }}
             />
           ) : (

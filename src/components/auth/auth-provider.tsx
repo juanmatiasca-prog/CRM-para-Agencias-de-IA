@@ -18,6 +18,7 @@ import {
 } from "firebase/auth";
 
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase";
+import { ensureProfile } from "@/lib/repo";
 
 interface AuthContextValue {
   user: User | null;
@@ -77,6 +78,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (nextUser) => {
       setUser(nextUser);
       setLoading(false);
+
+      // El documento de perfil debe existir antes de que la app escriba nada
+      // bajo /users/{uid}. Se reescribe con merge en cada acceso, asi que
+      // tambien sirve para refrescar el nombre si el usuario lo cambia.
+      if (nextUser) {
+        void ensureProfile(
+          nextUser.uid,
+          nextUser.displayName ?? "",
+          nextUser.email ?? "",
+        ).catch(() => {
+          // Un fallo aqui no debe impedir el uso de la app: las reglas
+          // permiten escribir clientes aunque el perfil no se haya creado.
+        });
+      }
     });
     return unsubscribe;
   }, []);

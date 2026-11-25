@@ -4,9 +4,10 @@ CRM personalizado para agencias que venden servicios de inteligencia artificial:
 clientes, proyectos y seguimiento del avance en un solo sitio.
 
 > **Estado:** primera versión funcional. Landing pública, registro e inicio de
-> sesión con Firebase Authentication, y la primera pestaña del CRM (Clientes)
-> operativa. **Todavía no hay base de datos**: los datos se guardan en el
-> navegador. Ver [Persistencia](#persistencia-temporal-en-el-navegador).
+> sesión con Firebase Authentication, la primera pestaña del CRM (Clientes)
+> operativa y los datos en **Cloud Firestore**, con aislamiento por usuario
+> impuesto por Security Rules. Ver
+> [Base de datos](#base-de-datos-y-aislamiento-por-usuario).
 
 ## Stack
 
@@ -19,6 +20,7 @@ clientes, proyectos y seguimiento del avance en un solo sitio.
 | Iconos | **lucide-react** | Los que trae el preset de shadcn |
 | Avisos | **sonner** | Toasts de confirmación y error |
 | Autenticación | **Firebase Authentication** (correo y contraseña) | Sin backend propio que mantener |
+| Base de datos | **Cloud Firestore** (base con nombre `mkt-hackers-db-id`) | Sincronización en tiempo real y reglas de acceso declarativas |
 | Hosting | **Firebase Hosting** | El export estático se sirve como ficheros |
 
 ### Sobre shadcn/ui
@@ -73,6 +75,13 @@ npm run build; if ($?) { npx -y firebase-tools@latest deploy --only hosting }
 El build escribe en `out/`, que es el directorio público declarado en
 `firebase.json`.
 
+Las reglas de seguridad se despliegan aparte. **Hay que hacerlo cada vez que se
+toque `firestore.rules`**, o la base seguirá con las reglas anteriores:
+
+```powershell
+npx -y firebase-tools@latest deploy --only firestore
+```
+
 > Al ser un export estático no hay servidor: toda la lógica, incluida la
 > comprobación de sesión, corre en el navegador. Si más adelante hace falta SSR,
 > rutas de API o Server Actions, habrá que migrar a **Firebase App Hosting** y
@@ -91,7 +100,9 @@ El build escribe en `out/`, que es el directorio público declarado en
 | `src/components/auth/` | Proveedor de sesión y guarda de rutas |
 | `src/lib/nav.ts` | **Las pestañas del menú lateral** |
 | `src/lib/types.ts` | Modelo de datos |
-| `src/lib/storage.ts` | Persistencia en el navegador |
+| `src/lib/repo.ts` | Acceso a Firestore: rutas, lecturas y escrituras |
+| `src/lib/migrate.ts` | Migración puntual desde `localStorage` |
+| `firestore.rules` | **Reglas de seguridad: el único control de acceso real** |
 | `src/hooks/use-clients.ts` | Estado y mutaciones de clientes |
 | `planning/` | Investigación y catálogo de funcionalidades |
 | `AGENTS.md` | Instrucciones para agentes de IA |
@@ -117,22 +128,67 @@ Las entradas con `ready: false` aparecen desactivadas con la etiqueta «Pronto»
   - **Proyectos por cliente**, con estado (discovery, propuesta, en curso,
     entregado, cancelado) y presupuesto.
   - **Comentarios por proyecto**, con autor y fecha. Ctrl + Enter para enviar.
+  - Todo se guarda en Firestore y se sincroniza en tiempo real entre pestañas
+    y dispositivos.
 - **Menú lateral** colapsable, con las siguientes pestañas ya listadas y
   desactivadas: Empresas, Pipeline, Proyectos, Tiempo, Facturación y Ajustes.
 
-## Persistencia temporal en el navegador
+## Base de datos y aislamiento por usuario
 
-No hay base de datos conectada todavía. `src/lib/storage.ts` guarda los datos en
-`localStorage`, con una clave por usuario (`crm_mkt_hackers:v1:<uid>`). Esto
-implica:
+Los datos viven en **Cloud Firestore**, en la base de datos con nombre
+`mkt-hackers-db-id` (no la `(default)`; el id se pasa explícitamente en
+`src/lib/firebase.ts`).
 
-- Los datos **no se comparten** entre usuarios, navegadores ni dispositivos.
-- Se **pierden** si se borran los datos del sitio.
-- La protección de rutas es de interfaz, no de datos.
+### Estructura
 
-El módulo está aislado a propósito: al conectar Cloud Firestore solo hay que
-sustituir su implementación manteniendo la misma interfaz, y mover el control de
-acceso real a las Security Rules.
+```
+/users/{uid}                                                    perfil
+/users/{uid}/clients/{clientId}                                 cliente
+/users/{uid}/clients/{clientId}/projects/{projectId}            proyecto
+/users/{uid}/clients/{clientId}/projects/{projectId}/comments/{commentId}
+```
+
+Todo cuelga del `uid` de Firebase Auth. **Cada persona que se registra tiene su
+propio espacio y nadie más puede leerlo ni escribirlo.** No hay datos
+compartidos, ni equipos, ni administradores, ni lectura pública.
+
+### Dónde está la seguridad
+
+La aplicación es un sitio estático sin backend: todo el acceso a datos ocurre
+desde el navegador. Por tanto **`firestore.rules` es el único control de acceso
+real que existe**. La comprobación de sesión del frontend solo evita enseñar
+pantallas vacías; no protege nada.
+
+Las reglas hacen cuatro cosas:
+
+1. Deniegan todo por defecto y abren solo `/users/{uid}/...` para su dueño.
+2. Validan el esquema en `create` **y** en `update`: tipos, campos obligatorios,
+   valores de `status` dentro de su lista cerrada y ningún campo desconocido.
+3. Limitan el tamaño de cada campo de texto, para que nadie escriba un megabyte
+   en `notes` o en un comentario.
+4. Congelan `createdAt` y hacen los comentarios inmutables: se crean y se
+   borran, no se editan.
+
+Comprobado contra la base real: leer los datos propios devuelve `200`; leer los
+de otro usuario o entrar sin sesión devuelve `403 PERMISSION_DENIED`.
+
+> Las reglas son un prototipo sólido, no una garantía. Antes de abrir la
+> aplicación a mucha gente conviene revisarlas y endurecerlas con calma.
+
+### Migración desde el almacenamiento local
+
+La versión anterior guardaba los datos en `localStorage`. `src/lib/migrate.ts`
+los sube a Firestore la primera vez que el usuario entra, una sola vez por
+navegador, y **no borra el original** por si algo falla. Es código de
+transición: puede eliminarse cuando ya nadie tenga datos locales pendientes.
+
+### Limitaciones conocidas
+
+- Borrar un cliente recorre sus proyectos y comentarios en lote, porque
+  Firestore **no** borra las subcolecciones al borrar el documento padre.
+- La lista de clientes abre una suscripción por cliente para contar sus
+  proyectos. Es suficiente para un CRM personal; con cientos de clientes habría
+  que denormalizar un contador.
 
 ## Seguridad y privacidad
 

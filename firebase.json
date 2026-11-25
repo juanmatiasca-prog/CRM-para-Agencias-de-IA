@@ -24,5 +24,12 @@
     "providers": {
       "emailPassword": true
     }
-  }
+  },
+  "firestore": [
+    {
+      "database": "mkt-hackers-db-id",
+      "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json"
+    }
+  ]
 }
