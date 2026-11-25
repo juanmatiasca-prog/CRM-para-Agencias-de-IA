@@ -57,6 +57,18 @@ rules_version = '2';
 //     - createdAt: timestamp (obligatorio, inmutable)
 //   Los comentarios son inmutables: se crean y se borran, no se editan.
 //
+// Subcoleccion: attachments/{attachmentId}
+//   Cuelga de un cliente, de un proyecto o de un comentario. Guarda los
+//   METADATOS del archivo; el fichero en si vive en Cloud Storage y se
+//   protege con `storage.rules`.
+//   Campos:
+//     - name:        string (obligatorio, 1-255)  nombre original
+//     - path:        string (obligatorio, 1-1024) ruta en el bucket
+//     - contentType: string (obligatorio, 1-150)
+//     - size:        number (obligatorio, 1 .. 10485760)  bytes
+//     - createdAt:   timestamp (obligatorio, inmutable)
+//   Son inmutables: se crean y se borran, no se editan.
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -160,6 +172,24 @@ service cloud.firestore {
         && isServerTime(data.updatedAt);
     }
 
+    // Metadatos de un archivo adjunto. El limite de 10 MB es el mismo que
+    // impone `storage.rules`: si no coincidieran, se podria registrar un
+    // tamano falso que no corresponde al fichero real.
+    function isValidAttachment(data) {
+      return hasOnlyAllowedFields(['name', 'path', 'contentType', 'size', 'createdAt'])
+        && hasRequiredFields(['name', 'path', 'contentType', 'size', 'createdAt'])
+        && isBoundedString(data.name, 1, 255)
+        && isBoundedString(data.path, 1, 1024)
+        && isBoundedString(data.contentType, 1, 150)
+        && data.size is number
+        && data.size > 0
+        && data.size <= 10485760
+        // La ruta debe caer dentro del arbol del propio usuario. Sin esto,
+        // alguien podria registrar un adjunto apuntando a un fichero ajeno.
+        && data.path.matches('^users/' + request.auth.uid + '/.*')
+        && isServerTime(data.createdAt);
+    }
+
     function isValidComment(data) {
       return hasOnlyAllowedFields(['body', 'author', 'createdAt'])
         && hasRequiredFields(['body', 'author', 'createdAt'])
@@ -212,6 +242,14 @@ service cloud.firestore {
 
         allow delete: if isOwner(uid);
 
+        // Adjuntos del cliente: contratos, facturas, documentacion.
+        match /attachments/{attachmentId} {
+          allow read: if isOwner(uid);
+          allow create: if isOwner(uid) && isValidAttachment(request.resource.data);
+          allow update: if false;
+          allow delete: if isOwner(uid);
+        }
+
         // -------------------------------------------------------
         // Proyectos del cliente
         // -------------------------------------------------------
@@ -229,6 +267,14 @@ service cloud.firestore {
 
           allow delete: if isOwner(uid);
 
+          // Adjuntos del proyecto: propuestas, planos, entregables.
+          match /attachments/{attachmentId} {
+            allow read: if isOwner(uid);
+            allow create: if isOwner(uid) && isValidAttachment(request.resource.data);
+            allow update: if false;
+            allow delete: if isOwner(uid);
+          }
+
           // -----------------------------------------------------
           // Comentarios del proyecto
           // -----------------------------------------------------
@@ -244,6 +290,17 @@ service cloud.firestore {
             allow update: if false;
 
             allow delete: if isOwner(uid);
+
+            // Adjuntos del comentario: capturas, documentos puntuales.
+            // Van en subcoleccion y no como campo del comentario para poder
+            // validarlos uno a uno; las reglas no saben inspeccionar el
+            // contenido de una lista de mapas.
+            match /attachments/{attachmentId} {
+              allow read: if isOwner(uid);
+              allow create: if isOwner(uid) && isValidAttachment(request.resource.data);
+              allow update: if false;
+              allow delete: if isOwner(uid);
+            }
           }
         }
       }

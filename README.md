@@ -21,6 +21,7 @@ clientes, proyectos y seguimiento del avance en un solo sitio.
 | Avisos | **sonner** | Toasts de confirmación y error |
 | Autenticación | **Firebase Authentication** (correo y contraseña) | Sin backend propio que mantener |
 | Base de datos | **Cloud Firestore** (base con nombre `mkt-hackers-db-id`) | Sincronización en tiempo real y reglas de acceso declarativas |
+| Archivos | **Cloud Storage for Firebase** | Adjuntos de clientes, proyectos y comentarios, con las mismas reglas de aislamiento |
 | Hosting | **Firebase Hosting** | El export estático se sirve como ficheros |
 
 ### Sobre shadcn/ui
@@ -79,7 +80,7 @@ Las reglas de seguridad se despliegan aparte. **Hay que hacerlo cada vez que se
 toque `firestore.rules`**, o la base seguirá con las reglas anteriores:
 
 ```powershell
-npx -y firebase-tools@latest deploy --only firestore
+npx -y firebase-tools@latest deploy --only firestore,storage
 ```
 
 > Al ser un export estático no hay servidor: toda la lógica, incluida la
@@ -101,8 +102,11 @@ npx -y firebase-tools@latest deploy --only firestore
 | `src/lib/nav.ts` | **Las pestañas del menú lateral** |
 | `src/lib/types.ts` | Modelo de datos |
 | `src/lib/repo.ts` | Acceso a Firestore: rutas, lecturas y escrituras |
+| `src/lib/attachments.ts` | Subida, listado y borrado de archivos |
+| `src/components/attachments/` | El clip y la lista de adjuntos |
 | `src/lib/migrate.ts` | Migración puntual desde `localStorage` |
-| `firestore.rules` | **Reglas de seguridad: el único control de acceso real** |
+| `firestore.rules` | **Reglas de seguridad de la base de datos** |
+| `storage.rules` | **Reglas de seguridad de los archivos** |
 | `src/hooks/use-clients.ts` | Estado y mutaciones de clientes |
 | `planning/` | Investigación y catálogo de funcionalidades |
 | `AGENTS.md` | Instrucciones para agentes de IA |
@@ -128,6 +132,7 @@ Las entradas con `ready: false` aparecen desactivadas con la etiqueta «Pronto»
   - **Proyectos por cliente**, con estado (discovery, propuesta, en curso,
     entregado, cancelado) y presupuesto.
   - **Comentarios por proyecto**, con autor y fecha. Ctrl + Enter para enviar.
+  - **Archivos adjuntos** en los tres niveles: cliente, proyecto y comentario.
   - Todo se guarda en Firestore y se sincroniza en tiempo real entre pestañas
     y dispositivos.
 - **Menú lateral** colapsable, con las siguientes pestañas ya listadas y
@@ -189,6 +194,58 @@ transición: puede eliminarse cuando ya nadie tenga datos locales pendientes.
 - La lista de clientes abre una suscripción por cliente para contar sus
   proyectos. Es suficiente para un CRM personal; con cientos de clientes habría
   que denormalizar un contador.
+
+## Archivos adjuntos
+
+Se pueden subir archivos en tres sitios, cada uno con su clip:
+
+| Dónde | Para qué |
+|---|---|
+| Cliente | Contratos, facturas, documentación de la cuenta |
+| Proyecto | Propuestas, planos, entregables |
+| Comentario | Capturas y documentos puntuales del seguimiento |
+
+El clip abre el **selector de archivos del sistema operativo**. Se pueden elegir
+varios de una vez.
+
+### Límites
+
+- **10 MB por archivo.**
+- Tipos admitidos: PDF, Word, Excel, PowerPoint, RTF, texto, CSV y las imágenes
+  JPG, PNG, WEBP, GIF y HEIC.
+
+Ambos límites están **duplicados a propósito**: en el navegador, para dar un
+error inmediato, y en `storage.rules`, que es donde de verdad se imponen. Si
+cambias uno, cambia el otro o las subidas se rechazarán a mitad.
+
+### Cómo se guardan
+
+El fichero va a Cloud Storage bajo una ruta que replica la jerarquía de
+Firestore:
+
+```
+users/{uid}/clients/{clientId}/...
+users/{uid}/clients/{clientId}/projects/{projectId}/...
+users/{uid}/clients/{clientId}/projects/{projectId}/comments/{commentId}/...
+```
+
+Sus metadatos (nombre, tamaño, tipo y ruta) van a una subcolección
+`attachments` del cliente, del proyecto o del comentario.
+
+**Las URL de descarga no se guardan en la base de datos.** Se piden a Firebase
+en el momento de abrir o previsualizar el archivo, para que cada acceso pase por
+las reglas en lugar de quedar un enlace permanente almacenado.
+
+### Detalles que conviene conocer
+
+- Al borrar un cliente o un proyecto se recorren sus archivos y se eliminan del
+  bucket. Ni Firestore ni Storage borran nada en cascada por su cuenta: sin ese
+  recorrido quedarían ficheros ocupando espacio para siempre.
+- En un comentario, el archivo se elige antes de publicar y se sube **después**
+  de crear el comentario, porque los adjuntos cuelgan de él.
+- El `contentType` lo declara el navegador. La lista de tipos permitidos frena
+  subidas accidentales y el uso del bucket como almacén general, pero no es una
+  comprobación del contenido real del fichero.
 
 ## Seguridad y privacidad
 

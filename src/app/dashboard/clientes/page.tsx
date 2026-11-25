@@ -225,13 +225,9 @@ export default function ClientesPage() {
                   toast.error(writeError(cause));
                 }
               }}
-              onAddComment={async (projectId, body) => {
-                try {
-                  await addComment(selected.id, projectId, body);
-                } catch (cause) {
-                  toast.error(writeError(cause));
-                }
-              }}
+              onAddComment={(projectId, body) =>
+                addComment(selected.id, projectId, body)
+              }
             />
           ) : (
             <Card className="mx-auto mt-10 max-w-md">

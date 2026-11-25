@@ -2,6 +2,7 @@
 
 import { Building2, FolderKanban, Mail, Phone, Tag, Trash2 } from "lucide-react";
 
+import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
 import { NewProjectDialog, type NewProjectInput } from "@/components/clientes/new-project-dialog";
 import { ProjectCard } from "@/components/clientes/project-card";
 import { formatDate } from "@/components/clientes/status-badge";
@@ -59,7 +60,7 @@ export function ClientDetail({
   onAddProject: (input: NewProjectInput) => void;
   onProjectStatusChange: (projectId: string, status: ProjectStatus) => void;
   onDeleteProject: (projectId: string) => void;
-  onAddComment: (projectId: string, body: string) => void;
+  onAddComment: (projectId: string, body: string) => Promise<string>;
 }) {
   const hasContactData = Boolean(
     client.company || client.email || client.phone || client.industry,
@@ -129,6 +130,16 @@ export function ClientDetail({
         </Card>
       )}
 
+      <Card>
+        <CardContent>
+          <AttachmentsPanel
+            owner={{ kind: "client", clientId: client.id }}
+            title="Archivos del cliente"
+            emptyHint="Sin archivos. Usa el clip para subir contratos, facturas o documentación."
+          />
+        </CardContent>
+      </Card>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-heading text-sm font-semibold">
           Proyectos
@@ -158,6 +169,7 @@ export function ClientDetail({
           {client.projects.map((project) => (
             <ProjectCard
               key={project.id}
+              clientId={client.id}
               project={project}
               onStatusChange={(status) => onProjectStatusChange(project.id, status)}
               onDelete={() => onDeleteProject(project.id)}

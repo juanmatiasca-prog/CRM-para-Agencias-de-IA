@@ -74,3 +74,74 @@ export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
   "entregado",
   "cancelado",
 ];
+
+/**
+ * Metadatos de un archivo adjunto. El fichero en si vive en Cloud Storage;
+ * aqui solo se guarda como encontrarlo y como mostrarlo.
+ *
+ * `path` es la ruta dentro del bucket, no una URL. La URL de descarga se pide
+ * a Firebase en el momento de usarla, para que el acceso pase siempre por las
+ * reglas de seguridad en vez de quedar guardado en la base de datos.
+ */
+export interface Attachment {
+  id: string;
+  name: string;
+  path: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+}
+
+/** A que entidad se engancha un adjunto. */
+export type AttachmentOwner =
+  | { kind: "client"; clientId: string }
+  | { kind: "project"; clientId: string; projectId: string }
+  | { kind: "comment"; clientId: string; projectId: string; commentId: string };
+
+/** Tamano maximo por archivo. Debe coincidir con `storage.rules`. */
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Tipos admitidos. Debe coincidir con la lista de `storage.rules`: si aqui se
+ * permite algo que alli no, la subida se rechaza a mitad y el usuario ve un
+ * error sin explicacion.
+ */
+export const ALLOWED_ATTACHMENT_TYPES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/rtf",
+  "text/plain",
+  "text/csv",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+] as const;
+
+/** Valor del atributo `accept` del selector de archivos del sistema. */
+export const ATTACHMENT_ACCEPT = [
+  ...ALLOWED_ATTACHMENT_TYPES,
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".ppt",
+  ".pptx",
+  ".rtf",
+  ".txt",
+  ".csv",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".gif",
+  ".heic",
+].join(",");

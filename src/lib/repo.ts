@@ -28,13 +28,13 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
-  writeBatch,
   type DocumentData,
   type QueryDocumentSnapshot,
   type Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
 
+import { purgeAttachments } from "@/lib/attachments";
 import { getDb } from "@/lib/firebase";
 import type {
   Client,
@@ -243,19 +243,13 @@ export async function setClientStatus(
  * huerfanas y siguen ocupando y facturando. Hay que recorrerlas a mano.
  */
 export async function removeClient(uid: string, clientId: string): Promise<void> {
-  const batch = writeBatch(getDb());
-
   const projects = await getDocs(projectsCol(uid, clientId));
   for (const projectSnapshot of projects.docs) {
-    const comments = await getDocs(
-      commentsCol(uid, clientId, projectSnapshot.id),
-    );
-    comments.docs.forEach((commentSnapshot) => batch.delete(commentSnapshot.ref));
-    batch.delete(projectSnapshot.ref);
+    await removeProject(uid, clientId, projectSnapshot.id);
   }
 
-  batch.delete(doc(clientsCol(uid), clientId));
-  await batch.commit();
+  await purgeAttachments(uid, { kind: "client", clientId });
+  await deleteDoc(doc(clientsCol(uid), clientId));
 }
 
 export async function addProject(
@@ -294,11 +288,19 @@ export async function removeProject(
   clientId: string,
   projectId: string,
 ): Promise<void> {
-  const batch = writeBatch(getDb());
   const comments = await getDocs(commentsCol(uid, clientId, projectId));
-  comments.docs.forEach((commentSnapshot) => batch.delete(commentSnapshot.ref));
-  batch.delete(doc(projectsCol(uid, clientId), projectId));
-  await batch.commit();
+  for (const commentSnapshot of comments.docs) {
+    await purgeAttachments(uid, {
+      kind: "comment",
+      clientId,
+      projectId,
+      commentId: commentSnapshot.id,
+    });
+    await deleteDoc(commentSnapshot.ref);
+  }
+
+  await purgeAttachments(uid, { kind: "project", clientId, projectId });
+  await deleteDoc(doc(projectsCol(uid, clientId), projectId));
 }
 
 export async function addComment(

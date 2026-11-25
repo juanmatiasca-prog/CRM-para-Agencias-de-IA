@@ -17,6 +17,7 @@
 import { getApp, getApps, initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 /**
  * ID de la base de datos de Firestore. No es la `(default)`: el proyecto usa
@@ -42,6 +43,7 @@ export const isFirebaseConfigured = Boolean(
 let appInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
 let dbInstance: Firestore | null = null;
+let storageInstance: FirebaseStorage | null = null;
 
 export function getFirebaseApp(): FirebaseApp {
   if (!appInstance) {
@@ -70,4 +72,16 @@ export function getDb(): Firestore {
     dbInstance = getFirestore(getFirebaseApp(), FIRESTORE_DATABASE_ID);
   }
   return dbInstance;
+}
+
+/**
+ * Devuelve la instancia de Cloud Storage, donde viven los archivos adjuntos.
+ * Usa el bucket por defecto del proyecto, el declarado en
+ * NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET.
+ */
+export function getStorageBucket(): FirebaseStorage {
+  if (!storageInstance) {
+    storageInstance = getStorage(getFirebaseApp());
+  }
+  return storageInstance;
 }

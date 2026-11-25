@@ -1,0 +1,91 @@
+rules_version = '2';
+
+// ===============================================================
+// CRM_MKt_HACKERS — Reglas de seguridad de Cloud Storage
+// ===============================================================
+//
+// Los archivos adjuntos (contratos, facturas, capturas) se guardan bajo una
+// ruta que empieza por el uid del dueno, igual que en Firestore:
+//
+//   users/{uid}/clients/{clientId}/...                        adjunto de cliente
+//   users/{uid}/clients/{clientId}/projects/{projectId}/...   adjunto de proyecto
+//   users/{uid}/clients/{clientId}/projects/{projectId}/comments/{commentId}/...
+//
+// La aplicacion es un sitio estatico sin backend: el navegador habla
+// directamente con Storage. Estas reglas son el unico control de acceso real.
+//
+// IMPORTANTE: un archivo subido aqui NO es publico, pero quien obtenga su URL
+// de descarga firmada puede abrirlo mientras el token siga vivo. La aplicacion
+// resuelve esas URL en el momento de usarlas y no las guarda en Firestore.
+// ===============================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Sesion iniciada.
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // El solicitante es el dueno de esta rama de rutas.
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Tamano maximo por archivo: 10 MB.
+    // Sin este limite, cualquiera con sesion podria llenar el bucket.
+    function isWithinSizeLimit() {
+      return request.resource.size > 0
+        && request.resource.size <= 10 * 1024 * 1024;
+    }
+
+    // Lista cerrada de tipos admitidos: ofimatica e imagenes.
+    // Deja fuera ejecutables, archivos comprimidos y cualquier cosa rara.
+    // El contentType lo declara el cliente, asi que esto no es una garantia
+    // sobre el contenido real: es una barrera contra subidas accidentales y
+    // contra el uso del bucket como almacen de cualquier cosa.
+    function isAllowedType() {
+      return request.resource.contentType in [
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/rtf',
+        'text/plain',
+        'text/csv',
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+        'image/gif',
+        'image/heic',
+        'image/heif'
+      ];
+    }
+
+    // Todo lo que cuelga del uid del dueno, a cualquier profundidad.
+    // `=**` cubre las tres variantes de ruta (cliente, proyecto y comentario)
+    // sin repetir el bloque tres veces.
+    match /users/{uid}/{allPaths=**} {
+
+      // Solo el dueno descarga sus archivos.
+      allow read: if isOwner(uid);
+
+      // Crear y reemplazar: dueno, tamano acotado y tipo permitido.
+      allow write: if isOwner(uid)
+        && isWithinSizeLimit()
+        && isAllowedType();
+
+      // Borrar: solo el dueno. En un delete no hay request.resource, asi que
+      // las validaciones de tamano y tipo no aplican y no deben exigirse.
+      allow delete: if isOwner(uid);
+    }
+
+    // Cierre: cualquier ruta fuera de /users/{uid} queda denegada.
+    match /{allOther=**} {
+      allow read, write: if false;
+    }
+  }
+}
