@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, Users } from "lucide-react";
 import { toast } from "sonner";
 
@@ -65,6 +65,18 @@ export default function ClientesPage() {
   // Si el seleccionado desaparece (borrado o filtrado), cae al primero visible.
   const selected =
     clients.find((client) => client.id === selectedId) ?? filtered[0] ?? null;
+
+  // El hook solo suscribe los comentarios del cliente cuyo id recibe. Cuando la
+  // pantalla cae al primer cliente sin que nadie lo haya pulsado, `selectedId`
+  // seguia siendo null y los comentarios no se cargaban nunca: se guardaban en
+  // Firestore pero la ficha mostraba "Sin comentarios" para siempre. Fijar aqui
+  // la seleccion efectiva mantiene en sintonia lo que se ve y lo que se escucha.
+  const effectiveId = selected?.id ?? null;
+  useEffect(() => {
+    if (effectiveId && effectiveId !== selectedId) {
+      setSelectedId(effectiveId);
+    }
+  }, [effectiveId, selectedId]);
 
   return (
     <>
