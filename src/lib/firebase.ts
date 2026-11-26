@@ -15,6 +15,11 @@
  * el navegador lo pide.
  */
 import { getApp, getApps, initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
+import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+  type AppCheck,
+} from "firebase/app-check";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
@@ -44,6 +49,8 @@ let appInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
 let dbInstance: Firestore | null = null;
 let storageInstance: FirebaseStorage | null = null;
+let appCheckInstance: AppCheck | null = null;
+let appCheckTried = false;
 
 export function getFirebaseApp(): FirebaseApp {
   if (!appInstance) {
@@ -84,4 +91,104 @@ export function getStorageBucket(): FirebaseStorage {
     storageInstance = getStorage(getFirebaseApp());
   }
   return storageInstance;
+}
+
+// ---------------------------------------------------------------
+// App Check
+// ---------------------------------------------------------------
+
+/**
+ * True cuando la app corre en una maquina de desarrollo.
+ *
+ * reCAPTCHA Enterprise no funciona en localhost, y la documentacion de Firebase
+ * advierte expresamente de NO anadir `localhost` a los dominios de una clave de
+ * produccion. La via correcta en local es el token de depuracion.
+ */
+export function isLocalDevHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "[::1]" ||
+    host === "::1" ||
+    host.endsWith(".localhost")
+  );
+}
+
+/** Clave de sitio de reCAPTCHA Enterprise. Vacia hasta que se cree en la consola. */
+const APP_CHECK_SITE_KEY = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY ?? "";
+
+/**
+ * Marcador usado solo en local cuando todavia no hay clave de sitio.
+ *
+ * En modo depuracion el SDK no atestigua con reCAPTCHA: canjea el token de
+ * depuracion. El proveedor se sigue construyendo, de ahi que haga falta pasarle
+ * algo. Este valor NO sirve en produccion.
+ */
+const LOCAL_PLACEHOLDER_SITE_KEY = "app-check-sin-clave-solo-local";
+
+/**
+ * Inicializa App Check una sola vez y devuelve la instancia.
+ *
+ * Llamarla antes de usar Firebase AI Logic: el proyecto tiene App Check
+ * IMPUESTO sobre AI Logic, asi que sin token las llamadas al modelo responden
+ * 403.
+ *
+ * En desarrollo local activa el modo depuracion. La linea
+ * `self.FIREBASE_APPCHECK_DEBUG_TOKEN` tiene que ejecutarse ANTES de
+ * `initializeAppCheck`, tal como exige la documentacion; por eso va aqui dentro
+ * y no en un modulo aparte.
+ *
+ * Nunca lanza: si App Check no puede inicializarse, el resto de la aplicacion
+ * (Auth, Firestore, Storage) debe seguir funcionando.
+ */
+export function ensureAppCheck(): AppCheck | null {
+  if (typeof window === "undefined") return null;
+  if (appCheckTried) return appCheckInstance;
+  appCheckTried = true;
+
+  const local = isLocalDevHost();
+
+  if (local) {
+    // `true` hace que el SDK genere un token y lo imprima en la consola del
+    // navegador. Si se define la variable de entorno, se usa ese token concreto,
+    // util para reutilizar el mismo entre navegadores o maquinas.
+    const fixedToken = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN;
+    (self as unknown as Record<string, unknown>).FIREBASE_APPCHECK_DEBUG_TOKEN =
+      fixedToken && fixedToken.length > 0 ? fixedToken : true;
+  }
+
+  if (!APP_CHECK_SITE_KEY && !local) {
+    // En produccion sin clave de sitio no se inicializa nada: mas vale un fallo
+    // claro en la funcion de IA que una atestacion falsa.
+    console.warn(
+      "[App Check] Falta NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY. " +
+        "Las funciones de IA fallaran con 403 hasta que se configure.",
+    );
+    return null;
+  }
+
+  try {
+    appCheckInstance = initializeAppCheck(getFirebaseApp(), {
+      provider: new ReCaptchaEnterpriseProvider(
+        APP_CHECK_SITE_KEY || LOCAL_PLACEHOLDER_SITE_KEY,
+      ),
+      isTokenAutoRefreshEnabled: true,
+    });
+
+    if (local) {
+      console.info(
+        "[App Check] Modo depuracion activo. Busca arriba la linea " +
+          '"AppCheck debug token: ..." y registra ese token en la consola de ' +
+          "Firebase: Security > App Check > Apps > menu de tres puntos > " +
+          "Manage debug tokens.",
+      );
+    }
+  } catch (cause) {
+    console.warn("[App Check] No se pudo inicializar.", cause);
+    appCheckInstance = null;
+  }
+
+  return appCheckInstance;
 }

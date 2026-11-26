@@ -11,7 +11,7 @@
  */
 import { getAI, getGenerativeModel, GoogleAIBackend } from "firebase/ai";
 
-import { getFirebaseApp } from "@/lib/firebase";
+import { ensureAppCheck, getFirebaseApp } from "@/lib/firebase";
 import type { Client } from "@/lib/types";
 
 export const GEMINI_MODEL = "gemini-3.8-flash";
@@ -26,7 +26,17 @@ let modelInstance: ReturnType<typeof getGenerativeModel> | null = null;
 
 function getModel() {
   if (!modelInstance) {
-    const ai = getAI(getFirebaseApp(), { backend: new GoogleAIBackend() });
+    // App Check esta impuesto sobre AI Logic en este proyecto: sin token, el
+    // modelo responde 403. Tiene que quedar inicializado ANTES de `getAI`.
+    ensureAppCheck();
+
+    const ai = getAI(getFirebaseApp(), {
+      backend: new GoogleAIBackend(),
+      // Los modelos generativos exigen proteccion contra reenvio con tokens de
+      // un solo uso. Sin esto la llamada falla con "you must enforce Firebase
+      // App Check" aunque App Check este configurado.
+      useLimitedUseAppCheckTokens: true,
+    });
     modelInstance = getGenerativeModel(ai, {
       model: GEMINI_MODEL,
       generationConfig: {

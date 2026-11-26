@@ -17,7 +17,7 @@ import {
   type User,
 } from "firebase/auth";
 
-import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase";
+import { ensureAppCheck, getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase";
 import { ensureProfile } from "@/lib/repo";
 
 interface AuthContextValue {
@@ -75,6 +75,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       return;
     }
+
+    // App Check se inicializa al montar, ya en el navegador, para que en
+    // desarrollo local el token de depuracion aparezca en la consola nada mas
+    // cargar la pagina y no solo al usar la IA. Sigue siendo inicializacion
+    // diferida: no ocurre al importar el modulo, que es lo que romperia el
+    // prerenderizado del build.
+    ensureAppCheck();
     const unsubscribe = onAuthStateChanged(getFirebaseAuth(), (nextUser) => {
       setUser(nextUser);
       setLoading(false);
