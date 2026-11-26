@@ -3,6 +3,7 @@
 import { Building2, FolderKanban, Mail, Phone, Tag, Trash2 } from "lucide-react";
 
 import { AttachmentsPanel } from "@/components/attachments/attachments-panel";
+import { ClientSummary } from "@/components/clientes/client-summary";
 import { NewProjectDialog, type NewProjectInput } from "@/components/clientes/new-project-dialog";
 import { ProjectCard } from "@/components/clientes/project-card";
 import { formatDate } from "@/components/clientes/status-badge";
@@ -139,6 +140,8 @@ export function ClientDetail({
           />
         </CardContent>
       </Card>
+
+      <ClientSummary client={client} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-heading text-sm font-semibold">
