@@ -63,18 +63,29 @@ function SummaryText({ text }: { text: string }) {
   );
 }
 
-/** Resuelve los **negritas** dentro de una linea. */
+/**
+ * Resuelve negritas y cursivas dentro de una linea.
+ *
+ * El orden del patron importa: `**` tiene que probarse antes que `*`, o el
+ * primer asterisco de una negrita se tomaria por una cursiva y el texto
+ * acabaria con asteriscos sueltos en pantalla.
+ */
 function inline(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, index) =>
-    part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={index} className="font-medium text-foreground">
-        {part.slice(2, -2)}
-      </strong>
-    ) : (
-      <span key={index}>{part}</span>
-    ),
-  );
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return (
+        <strong key={index} className="font-medium text-foreground">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+    return <span key={index}>{part}</span>;
+  });
 }
 
 export function ClientSummary({ client }: { client: Client }) {
