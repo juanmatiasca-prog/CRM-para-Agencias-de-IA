@@ -11,7 +11,7 @@
  */
 import { getAI, getGenerativeModel, GoogleAIBackend } from "firebase/ai";
 
-import { ensureAppCheck, getFirebaseApp } from "@/lib/firebase";
+import { checkAppCheckToken, ensureAppCheck, getFirebaseApp } from "@/lib/firebase";
 import type { Client } from "@/lib/types";
 
 export const GEMINI_MODEL = "gemini-3.8-flash";
@@ -142,6 +142,15 @@ export async function summarizeClient(client: Client): Promise<string> {
     throw new Error("Este cliente todavía no tiene comentarios que resumir.");
   }
 
+  // App Check esta impuesto sobre AI Logic. Si no puede emitir un token, la
+  // llamada al modelo devolvera un 403 generico que es facil confundir con
+  // "el servicio no esta habilitado". Comprobarlo antes permite decir con
+  // precision que es lo que falla.
+  const appCheckProblem = await checkAppCheckToken();
+  if (appCheckProblem) {
+    throw new Error(appCheckProblem);
+  }
+
   const prompt = `${SYSTEM_PROMPT}
 
 A continuación, la ficha del cliente y todos sus comentarios:
@@ -168,8 +177,13 @@ export function aiErrorMessage(cause: unknown): string {
   if (/App Check/i.test(raw)) {
     return "El modelo exige App Check. Hay que configurarlo en la consola de Firebase antes de usar el resumen.";
   }
+  if (/appCheck|app-check/i.test(raw)) {
+    return "App Check rechazó la petición. Revisa que el token de depuración de este navegador esté registrado en la consola de Firebase.";
+  }
   if (/PERMISSION_DENIED|403/i.test(raw)) {
-    return "Firebase AI Logic no está habilitado en el proyecto, o falta permiso. Ejecuta: npx firebase-tools init ailogic";
+    // Un 403 aqui tiene dos causas posibles y conviene nombrar las dos: culpar
+    // solo a AI Logic manda a buscar el problema donde casi nunca esta.
+    return "El servicio rechazó la petición (403). Suele ser App Check sin token válido para este navegador; si no, que Firebase AI Logic no esté habilitado en el proyecto.";
   }
   if (/quota|RESOURCE_EXHAUSTED|429/i.test(raw)) {
     return "Se agotó la cuota del modelo. Inténtalo más tarde.";

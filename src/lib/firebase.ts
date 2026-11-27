@@ -16,6 +16,7 @@
  */
 import { getApp, getApps, initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
 import {
+  getToken as getAppCheckToken,
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
   type AppCheck,
@@ -191,4 +192,47 @@ export function ensureAppCheck(): AppCheck | null {
   }
 
   return appCheckInstance;
+}
+
+/**
+ * Comprueba que App Check puede emitir un token AHORA.
+ *
+ * Existe porque el fallo mas comun en local no es "el servicio no esta
+ * habilitado" sino "el token de depuracion de este navegador no esta
+ * registrado". Ambos acaban en un 403, y sin esta comprobacion previa el
+ * error que llega a la interfaz es ambiguo y lleva a buscar el problema donde
+ * no esta.
+ *
+ * Devuelve null si todo va bien, o un mensaje explicando que hacer.
+ */
+export async function checkAppCheckToken(): Promise<string | null> {
+  const appCheck = ensureAppCheck();
+
+  if (!appCheck) {
+    return isLocalDevHost()
+      ? "App Check no se pudo inicializar en este navegador."
+      : "Falta la clave de reCAPTCHA Enterprise (NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY). Sin ella App Check no funciona fuera de localhost.";
+  }
+
+  try {
+    await getAppCheckToken(appCheck, false);
+    return null;
+  } catch (cause) {
+    const code = String((cause as { code?: string }).code ?? "");
+
+    if (isLocalDevHost()) {
+      return (
+        "App Check rechazó la petición. En desarrollo local esto casi siempre " +
+        "significa que el token de depuración de ESTE navegador todavía no está " +
+        "registrado en la consola de Firebase: Security > App Check > pestaña " +
+        "Apps > menú de tres puntos de la app web > Manage debug tokens. El token " +
+        "aparece en la consola del navegador al cargar la página, y es distinto " +
+        "en cada navegador."
+      );
+    }
+
+    return code.includes("fetch-status-error")
+      ? "App Check rechazó la petición. Revisa que la clave de reCAPTCHA Enterprise sea la registrada para esta app y que el dominio esté permitido."
+      : "App Check no pudo emitir un token para esta petición.";
+  }
 }
