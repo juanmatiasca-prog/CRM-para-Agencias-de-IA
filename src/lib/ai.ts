@@ -11,7 +11,12 @@
  */
 import { getAI, getGenerativeModel, GoogleAIBackend } from "firebase/ai";
 
-import { checkAppCheckToken, ensureAppCheck, getFirebaseApp } from "@/lib/firebase";
+import {
+  checkAppCheckToken,
+  ensureAppCheck,
+  getFirebaseApp,
+  isLocalDevHost,
+} from "@/lib/firebase";
 import type { Client } from "@/lib/types";
 
 export const GEMINI_MODEL = "gemini-3.8-flash";
@@ -165,6 +170,13 @@ ${buildTranscript(client)}`;
     }
     return text;
   } catch (cause) {
+    // En local se vuelca el error tal cual lo devuelve el servicio. Los
+    // mensajes traducidos de abajo son para la persona que usa la app, pero
+    // al depurar hacen falta el codigo y el texto originales: ya ocurrio una
+    // vez que un 403 se interpretara como el problema equivocado.
+    if (isLocalDevHost()) {
+      console.error("[IA] Error sin traducir del servicio:", cause);
+    }
     throw new Error(aiErrorMessage(cause));
   }
 }
@@ -185,8 +197,13 @@ export function aiErrorMessage(cause: unknown): string {
     // solo a AI Logic manda a buscar el problema donde casi nunca esta.
     return "El servicio rechazó la petición (403). Suele ser App Check sin token válido para este navegador; si no, que Firebase AI Logic no esté habilitado en el proyecto.";
   }
+  // Un 429 tiene dos lecturas muy distintas y conviene separarlas: esperar no
+  // arregla la falta de saldo.
+  if (/prepayment credits|billing/i.test(raw)) {
+    return "El proyecto se ha quedado sin crédito para la API de Gemini. Hay que recargarlo o activar la facturación en AI Studio (ai.studio/projects). Esperar no lo resuelve.";
+  }
   if (/quota|RESOURCE_EXHAUSTED|429/i.test(raw)) {
-    return "Se agotó la cuota del modelo. Inténtalo más tarde.";
+    return "Se alcanzó el límite de peticiones del modelo. Espera un minuto y vuelve a intentarlo.";
   }
   if (/not found|404/i.test(raw)) {
     return `El modelo "${GEMINI_MODEL}" no está disponible en este proyecto.`;
